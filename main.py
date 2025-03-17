@@ -3,9 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from routes.github_routes import router as github_router
 import os
 from dotenv import load_dotenv
-import asyncio
 import logging
-from controllers.github_controller import cleanup_old_tasks
 
 # Configure logging
 logging.basicConfig(
@@ -66,15 +64,8 @@ async def root():
         "documentation_url": "/docs"
     }
 
-# Start the background task cleanup process on startup
-@app.on_event("startup")
-async def startup_event():
-    # Start the cleanup task if not running on Vercel
-    if not os.environ.get("VERCEL"):
-        asyncio.create_task(cleanup_old_tasks())
-        logger.info("Started background task cleanup process")
-    else:
-        logger.info("Running on Vercel, skipping background cleanup task")
+# Skip the background task cleanup for Vercel deployment
+# as it's not needed in a serverless environment
 
 if __name__ == "__main__":
     import uvicorn
