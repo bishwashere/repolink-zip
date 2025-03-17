@@ -89,11 +89,12 @@ async def download_completed_task(
 ):
     """Download the ZIP file from a completed background task"""
     try:
-        file_path, filename = get_download_file(task_id)
-        return FileResponse(
-            path=file_path,
-            filename=filename,
-            media_type="application/zip"
+        # Updated to work with in-memory storage instead of files
+        file_stream, filename = get_download_file(task_id)
+        return StreamingResponse(
+            file_stream,
+            media_type="application/zip",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
         )
     except HTTPException as e:
         raise e

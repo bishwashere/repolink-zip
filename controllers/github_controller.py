@@ -7,14 +7,17 @@ import time
 import uuid
 import os
 import logging
+import base64
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# In-memory store for background tasks
+# In-memory store for background tasks and files
+# This is necessary for Vercel which has an ephemeral filesystem
 running_tasks: Dict[str, Dict] = {}
 completed_tasks: Dict[str, Dict] = {}
+file_storage: Dict[str, bytes] = {}  # Store file data in memory
 
 async def download_folder_as_zip(owner: str, repo: str, folder_path: str, token: Optional[str] = None) -> tuple[io.BytesIO, str]:
     """Controller function to handle downloading a folder as a ZIP file"""
@@ -92,20 +95,19 @@ async def _execute_download_task(task_id: str, owner: str, repo: str, folder_pat
         task_info['status'] = 'completed'
         task_info['completed_at'] = time.time()
         task_info['progress'] = 100
+        
+        # Get the raw bytes data
+        zip_data = zip_buffer.getvalue()
+        
         task_info['result'] = {
             'filename': filename,
-            'size': zip_buffer.getbuffer().nbytes
+            'size': len(zip_data),
+            'task_id': task_id
         }
         
-        # Save the ZIP file to a temporary location for later retrieval
-        temp_dir = os.path.join(os.getcwd(), 'temp_downloads')
-        os.makedirs(temp_dir, exist_ok=True)
-        
-        file_path = os.path.join(temp_dir, f"{task_id}.zip")
-        with open(file_path, 'wb') as f:
-            f.write(zip_buffer.getvalue())
-        
-        task_info['result']['file_path'] = file_path
+        # Store the ZIP file data in memory instead of on disk
+        # This is compatible with Vercel's ephemeral filesystem
+        file_storage[task_id] = zip_data
         
         # Move from running to completed
         completed_tasks[task_id] = task_info
@@ -133,11 +135,47 @@ def get_task_status(task_id: str) -> Dict:
     else:
         raise HTTPException(status_code=404, detail=f"Task with ID {task_id} not found")
 
-def get_download_file(task_id: str) -> Tuple[str, str]:
-    """Get the file path and filename for a completed download task"""
+def get_download_file(task_id: str) -> Tuple[io.BytesIO, str]:
+    """Get the file data and filename for a completed download task"""
     if task_id in completed_tasks and completed_tasks[task_id]['status'] == 'completed':
         task_info = completed_tasks[task_id]
-        if 'result' in task_info and 'file_path' in task_info['result']:
-            return task_info['result']['file_path'], task_info['result']['filename']
+        if 'result' in task_info and 'filename' in task_info['result']:
+            if task_id in file_storage:
+                # Get the file data from memory
+                file_data = file_storage[task_id]
+                # Create a BytesIO object from the data
+                file_stream = io.BytesIO(file_data)
+                return file_stream, task_info['result']['filename']
     
     raise HTTPException(status_code=404, detail=f"Completed download for task {task_id} not found")
+
+# Add a task cleanup function that runs periodically
+async def cleanup_old_tasks():
+    """Clean up old tasks and files to prevent memory leaks"""
+    while True:
+        try:
+            current_time = time.time()
+            # Get the maximum age from environment or default to 24 hours
+            max_age_hours = float(os.getenv("TASK_CLEANUP_HOURS", "24"))
+            max_age_seconds = max_age_hours * 3600
+            
+            # Clean up completed tasks older than max_age
+            task_ids_to_remove = []
+            for task_id, task in completed_tasks.items():
+                if current_time - task.get('completed_at', current_time) > max_age_seconds:
+                    task_ids_to_remove.append(task_id)
+            
+            # Remove the tasks and their file data
+            for task_id in task_ids_to_remove:
+                del completed_tasks[task_id]
+                if task_id in file_storage:
+                    del file_storage[task_id]
+            
+            if task_ids_to_remove:
+                logger.info(f"Cleaned up {len(task_ids_to_remove)} old tasks")
+                
+            # Wait for some time before checking again
+            await asyncio.sleep(3600)  # Check every hour
+        except Exception as e:
+            logger.error(f"Error in task cleanup: {str(e)}")
+            await asyncio.sleep(3600)  # Wait and try again
