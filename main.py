@@ -3,9 +3,24 @@ from fastapi.middleware.cors import CORSMiddleware
 from routes.github_routes import router as github_router
 import os
 from dotenv import load_dotenv
+import asyncio
+import logging
+from controllers.github_controller import cleanup_old_tasks
 
-# Load environment variables from .env file
-load_dotenv()
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# Load environment variables from .env file if it exists
+env_path = os.path.join(os.path.dirname(__file__), '.env')
+if os.path.exists(env_path):
+    load_dotenv(env_path)
+    logger.info("Loaded environment variables from .env file")
+else:
+    logger.info("No .env file found, using environment variables")
 
 app = FastAPI(
     title="GitHub Folder ZIP API",
@@ -50,6 +65,16 @@ async def root():
         ],
         "documentation_url": "/docs"
     }
+
+# Start the background task cleanup process on startup
+@app.on_event("startup")
+async def startup_event():
+    # Start the cleanup task if not running on Vercel
+    if not os.environ.get("VERCEL"):
+        asyncio.create_task(cleanup_old_tasks())
+        logger.info("Started background task cleanup process")
+    else:
+        logger.info("Running on Vercel, skipping background cleanup task")
 
 if __name__ == "__main__":
     import uvicorn
