@@ -4,6 +4,9 @@ from routes.github_routes import router as github_router
 import os
 from dotenv import load_dotenv
 import logging
+import asyncio
+from utils.cleanup_manager import cleanup_manager
+from utils.r2_storage import R2Storage
 
 # Configure logging
 logging.basicConfig(
@@ -30,6 +33,7 @@ app = FastAPI(
     - Access private repositories using the API's built-in GitHub token
     - Simple URL-based API with query parameters
     - Store downloads in Cloudflare R2 for faster access
+    - Automatic link expiration for security
     
     ## Authentication:
     The API uses a pre-configured GitHub token for accessing repositories.
@@ -51,6 +55,25 @@ app.add_middleware(
 # Include routers
 app.include_router(github_router)
 
+# Initialize storage and cleanup services
+r2_storage = R2Storage()
+
+# Start cleanup manager on application startup
+@app.on_event("startup")
+async def startup_event():
+    # Only start the background task in non-serverless environments
+    if not os.getenv("VERCEL", ""):
+        await cleanup_manager.start(r2_storage)
+        logger.info("Started background cleanup manager")
+
+# Shutdown cleanup manager when application stops
+@app.on_event("shutdown")
+async def shutdown_event():
+    # Only needed in non-serverless environments
+    if not os.getenv("VERCEL", ""):
+        await cleanup_manager.stop()
+        logger.info("Stopped background cleanup manager")
+
 # Root endpoint
 @app.get("/")
 async def root():
@@ -60,9 +83,25 @@ async def root():
             "Download folders from public GitHub repositories",
             "Access private repositories using the API's built-in GitHub token",
             "Customize folder path to download specific directories",
-            "Store downloads in Cloudflare R2 for faster delivery"
+            "Store downloads in Cloudflare R2 for faster delivery",
+            "Automatic file expiration for security"
         ],
         "documentation_url": "/docs"
+    }
+
+# Add an admin endpoint to manually trigger cleanup
+@app.post("/api/admin/cleanup", include_in_schema=False)
+async def trigger_cleanup():
+    """
+    Manually trigger the cleanup process
+    This endpoint is hidden from the docs for security
+    """
+    # Run the cleanup in a background task
+    cleanup_task = asyncio.create_task(cleanup_manager._run_cleanup_tasks())
+    
+    return {
+        "message": "Cleanup process started",
+        "status": "running"
     }
 
 if __name__ == "__main__":
