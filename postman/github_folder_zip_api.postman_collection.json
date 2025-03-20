@@ -1,0 +1,248 @@
+{
+	"info": {
+		"_postman_id": "7b9da4c2-5a69-4e3b-9a2d-3d7e5aa65f2c",
+		"name": "GitHub Folder ZIP API",
+		"description": "API to download specific folders from GitHub repositories as ZIP files.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "0"
+	},
+	"item": [
+		{
+			"name": "Welcome Page",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						""
+					]
+				},
+				"description": "Get welcome information and API features"
+			},
+			"response": []
+		},
+		{
+			"name": "Download Folder from Public Repo",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/api/github/download-folder?owner=facebook&repo=react&folder_path=packages/react",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"github",
+						"download-folder"
+					],
+					"query": [
+						{
+							"key": "owner",
+							"value": "facebook",
+							"description": "GitHub repository owner/organization"
+						},
+						{
+							"key": "repo",
+							"value": "react",
+							"description": "GitHub repository name"
+						},
+						{
+							"key": "folder_path",
+							"value": "packages/react",
+							"description": "Folder path within the repository"
+						}
+					]
+				},
+				"description": "Download a specific folder from a public GitHub repository as a ZIP file"
+			},
+			"response": []
+		},
+		{
+			"name": "Download Entire Public Repo",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/api/github/download-folder?owner=vercel&repo=next.js",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"github",
+						"download-folder"
+					],
+					"query": [
+						{
+							"key": "owner",
+							"value": "vercel",
+							"description": "GitHub repository owner/organization"
+						},
+						{
+							"key": "repo",
+							"value": "next.js",
+							"description": "GitHub repository name"
+						}
+					]
+				},
+				"description": "Download an entire public GitHub repository as a ZIP file"
+			},
+			"response": []
+		},
+		{
+			"name": "Download Folder with Custom Token",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/api/github/download-folder?owner=your-org&repo=private-repo&folder_path=src&token={{custom_github_token}}",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"github",
+						"download-folder"
+					],
+					"query": [
+						{
+							"key": "owner",
+							"value": "your-org",
+							"description": "GitHub repository owner/organization"
+						},
+						{
+							"key": "repo",
+							"value": "private-repo",
+							"description": "GitHub repository name"
+						},
+						{
+							"key": "folder_path",
+							"value": "src",
+							"description": "Folder path within the repository"
+						},
+						{
+							"key": "token",
+							"value": "{{custom_github_token}}",
+							"description": "Override the default GitHub token for this request"
+						}
+					]
+				},
+				"description": "Download a folder from a private GitHub repository using a custom token"
+			},
+			"response": []
+		},
+		{
+			"name": "Download Single Folder (Small)",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/api/github/download-folder?owner=tailwindlabs&repo=tailwindcss&folder_path=src/css",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"github",
+						"download-folder"
+					],
+					"query": [
+						{
+							"key": "owner",
+							"value": "tailwindlabs",
+							"description": "GitHub repository owner/organization"
+						},
+						{
+							"key": "repo",
+							"value": "tailwindcss",
+							"description": "GitHub repository name"
+						},
+						{
+							"key": "folder_path",
+							"value": "src/css",
+							"description": "Folder path within the repository"
+						}
+					]
+				},
+				"description": "Download a small folder from a public GitHub repository"
+			},
+			"response": []
+		},
+		{
+			"name": "Download UI Components",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/api/github/download-folder?owner=shadcn&repo=ui&folder_path=components",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"github",
+						"download-folder"
+					],
+					"query": [
+						{
+							"key": "owner",
+							"value": "shadcn",
+							"description": "GitHub repository owner/organization"
+						},
+						{
+							"key": "repo",
+							"value": "ui",
+							"description": "GitHub repository name"
+						},
+						{
+							"key": "folder_path",
+							"value": "components",
+							"description": "Folder path within the repository"
+						}
+					]
+				},
+				"description": "Download UI components from shadcn/ui repository"
+			},
+			"response": []
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:8000",
+			"type": "string",
+			"description": "Base URL of the API"
+		},
+		{
+			"key": "custom_github_token",
+			"value": "",
+			"type": "string",
+			"description": "Your personal GitHub token if needed for private repos"
+		}
+	]
+}
