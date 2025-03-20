@@ -5,7 +5,9 @@ import io
 import os
 import time
 import logging
-from typing import Dict, List, Optional, Set, Any
+import concurrent.futures
+from typing import Dict, List, Optional, Set, Any, Tuple
+from concurrent.futures import ThreadPoolExecutor
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -36,6 +38,9 @@ class GitHubAPI:
         # Track rate limits
         self.rate_limit_remaining = 5000
         self.rate_limit_reset = 0
+        
+        # Max workers for parallel processing
+        self.max_workers = min(32, os.cpu_count() * 4)  # Use 4x CPU cores but cap at 32
     
     async def get_repository_contents(self, owner: str, repo: str, path: str = "") -> List[Dict]:
         """Fetch contents of a repository at a specific path"""
@@ -83,10 +88,12 @@ class GitHubAPI:
         # Create a ZIP file in memory
         zip_buffer = io.BytesIO()
         with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-            # Use synchronous methods
-            total_files = self._sync_count_files(owner, repo, folder_path, contents)
-            processed_files = 0
-            self._sync_add_folder_to_zip(zip_file, owner, repo, folder_path, contents, folder_path, processed_files, total_files)
+            # Scan the repository structure first to build a complete list of files
+            file_list = self._scan_repository_structure(owner, repo, folder_path, contents)
+            logger.info(f"Found {len(file_list)} files to process")
+            
+            # Process files in parallel using thread pool
+            self._process_files_parallel(zip_file, file_list, folder_path)
         
         # Reset the buffer position to the beginning
         zip_buffer.seek(0)
@@ -95,43 +102,61 @@ class GitHubAPI:
         logger.info(f"ZIP creation completed in {end_time - start_time:.2f} seconds")
         return zip_buffer
     
-    def _sync_count_files(self, owner: str, repo: str, folder_path: str, contents: List[Dict]) -> int:
-        """Count the total number of files in a folder structure (synchronous version)"""
-        count = 0
+    def _scan_repository_structure(self, owner: str, repo: str, folder_path: str, contents: List[Dict]) -> List[Dict]:
+        """Scan the repository structure to build a complete list of files"""
+        file_list = []
         
-        for item in contents:
-            if item["type"] == "file":
-                count += 1
-            elif item["type"] == "dir":
-                subdir_contents = self._sync_get_repository_contents(owner, repo, item["path"], f"contents:{owner}:{repo}:{item['path']}")
-                count += self._sync_count_files(owner, repo, item["path"], subdir_contents)
+        def scan_folder(path, items):
+            for item in items:
+                if item["type"] == "file":
+                    file_list.append(item)
+                elif item["type"] == "dir":
+                    subdir_contents = self._sync_get_repository_contents(
+                        owner, repo, item["path"], f"contents:{owner}:{repo}:{item['path']}"
+                    )
+                    scan_folder(item["path"], subdir_contents)
         
-        return count
+        scan_folder(folder_path, contents)
+        return file_list
     
-    def _sync_add_folder_to_zip(self, zip_file, owner, repo, folder_path, contents, base_folder, 
-                              processed_files, total_files):
-        """Recursively add files and folders to the ZIP file (synchronous version)"""
-        for item in contents:
-            # Get relative path for ZIP entry
-            rel_path = item["path"]
+    def _process_files_parallel(self, zip_file, file_list, base_folder):
+        """Process files in parallel using a thread pool"""
+        total_files = len(file_list)
+        processed_files = 0
+        
+        def process_file(file_item):
+            nonlocal processed_files
+            rel_path = file_item["path"]
             if base_folder:
                 # Remove the base folder from the path to maintain correct structure
                 rel_path = rel_path.replace(base_folder, "").lstrip("/")
             
-            if item["type"] == "file":
-                # Process file
-                self._sync_process_file(zip_file, rel_path, item["download_url"])
-                processed_files += 1
-                if total_files > 0 and processed_files % 10 == 0:
-                    logger.info(f"Progress: {processed_files}/{total_files} files ({processed_files/total_files*100:.1f}%)")
+            # Get file content
+            file_content = self._sync_get_file_content_cached(file_item["download_url"])
             
-            elif item["type"] == "dir":
-                # Process directory
-                subdir_contents = self._sync_get_repository_contents(owner, repo, item["path"], f"contents:{owner}:{repo}:{item['path']}")
-                self._sync_add_folder_to_zip(zip_file, owner, repo, item["path"], subdir_contents, base_folder, processed_files, total_files)
+            # Store file data to return to the calling function
+            return (rel_path, file_content)
+        
+        # Use a thread pool to process files in parallel
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            future_to_file = {executor.submit(process_file, file_item): file_item for file_item in file_list}
+            
+            # As each future completes, add its file to the ZIP
+            for i, future in enumerate(concurrent.futures.as_completed(future_to_file)):
+                try:
+                    rel_path, file_content = future.result()
+                    zip_file.writestr(rel_path, file_content)
+                    
+                    # Update progress
+                    processed_files += 1
+                    if processed_files % 10 == 0 or processed_files == total_files:
+                        logger.info(f"Progress: {processed_files}/{total_files} files ({processed_files/total_files*100:.1f}%)")
+                except Exception as e:
+                    file_item = future_to_file[future]
+                    logger.error(f"Error processing file {file_item['path']}: {str(e)}")
     
-    def _sync_process_file(self, zip_file, rel_path, download_url):
-        """Process a single file: download and add to ZIP (synchronous version)"""
+    def _sync_get_file_content_cached(self, download_url: str) -> bytes:
+        """Get file content with caching"""
         # Check cache first
         cache_key = f"file:{download_url}"
         file_content = self._get_from_cache(cache_key)
@@ -141,8 +166,7 @@ class GitHubAPI:
             # Cache the file content
             self._add_to_cache(cache_key, file_content)
         
-        # Add file to the ZIP
-        zip_file.writestr(rel_path, file_content)
+        return file_content
     
     def _sync_get_file_content(self, download_url: str) -> bytes:
         """Download file content from GitHub (synchronous version)"""

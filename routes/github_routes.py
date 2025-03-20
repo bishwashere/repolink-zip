@@ -1,12 +1,7 @@
-from fastapi import APIRouter, Query, Depends, HTTPException, Header, BackgroundTasks, Path
-from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
-from controllers.github_controller import (
-    download_folder_as_zip, 
-    start_background_download,
-    get_task_status,
-    get_download_file
-)
-from typing import Optional, Dict
+from fastapi import APIRouter, Query, HTTPException
+from fastapi.responses import StreamingResponse, JSONResponse
+from controllers.github_controller import download_folder_as_zip
+from typing import Optional
 import os
 
 router = APIRouter(
@@ -19,83 +14,31 @@ async def download_folder(
     owner: str = Query(..., description="GitHub repository owner/organization"),
     repo: str = Query(..., description="GitHub repository name"),
     folder_path: str = Query("", description="Folder path within the repository (e.g., 'src/components')"),
-    token: Optional[str] = Query(None, description="GitHub personal access token for private repositories"),
-    authorization: Optional[str] = Header(None, description="Authorization header with GitHub token (Bearer format)"),
-    background: bool = Query(False, description="Process download in background")
+    token: Optional[str] = Query(None, description="Optional: Override the default GitHub token for this request")
 ):
     """
     Download a specific folder from a GitHub repository as a ZIP file.
     
-    ## Authentication for Private Repositories:
-    - Provide a GitHub personal access token with 'repo' scope using either:
-      - The 'token' query parameter, or
-      - The 'Authorization' header with format 'Bearer your-token'
-    
     ## Notes:
     - If no folder path is specified, downloads the entire repository
-    - For public repositories, a token is not required but recommended to avoid rate limits
-    - For private repositories, a valid token with sufficient permissions is required
-    - Set 'background=true' for large folders to process the download in the background
+    - The API uses a default GitHub token for authentication
+    - You can optionally provide your own token to override the default one
+    - Returns a download URL where the ZIP file can be accessed
     """
     try:
-        # Extract token from Authorization header if provided
-        auth_token = None
-        if authorization and authorization.startswith("Bearer "):
-            auth_token = authorization.replace("Bearer ", "")
+        # Process the download and get result
+        result, filename = await download_folder_as_zip(owner, repo, folder_path, token)
         
-        # Use token from query parameter if authorization header not provided
-        final_token = auth_token or token
-        
-        if background:
-            # Start a background task and return a task ID
-            task_id = await start_background_download(owner, repo, folder_path, final_token)
-            return {
-                "message": "Download started in background",
-                "task_id": task_id,
-                "status_url": f"/api/github/tasks/{task_id}",
-                "download_url": f"/api/github/downloads/{task_id}"
-            }
+        # If result is a dictionary with download_url, return JSON response
+        if isinstance(result, dict):
+            return JSONResponse(content=result)
         else:
-            # Process synchronously
-            zip_buffer, filename = await download_folder_as_zip(owner, repo, folder_path, final_token)
-            
-            # Return the ZIP file as a downloadable response
+            # Fallback to direct file download if R2 storage failed
             return StreamingResponse(
-                zip_buffer,
+                result,
                 media_type="application/zip",
                 headers={"Content-Disposition": f"attachment; filename={filename}"}
             )
-    except HTTPException as e:
-        raise e
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
-
-@router.get("/tasks/{task_id}", response_model=Dict)
-async def check_task_status(
-    task_id: str = Path(..., description="The ID of the background task")
-):
-    """Get the status of a background download task"""
-    try:
-        task_info = get_task_status(task_id)
-        return task_info
-    except HTTPException as e:
-        raise e
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
-
-@router.get("/downloads/{task_id}")
-async def download_completed_task(
-    task_id: str = Path(..., description="The ID of the background task")
-):
-    """Download the ZIP file from a completed background task"""
-    try:
-        # Updated to work with in-memory storage instead of files
-        file_stream, filename = get_download_file(task_id)
-        return StreamingResponse(
-            file_stream,
-            media_type="application/zip",
-            headers={"Content-Disposition": f"attachment; filename={filename}"}
-        )
     except HTTPException as e:
         raise e
     except Exception as e:

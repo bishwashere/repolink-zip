@@ -27,14 +27,14 @@ app = FastAPI(
     
     ## Features:
     - Download any folder from public GitHub repositories
-    - Access private repositories with a valid GitHub token
+    - Access private repositories using the API's built-in GitHub token
     - Simple URL-based API with query parameters
+    - Store downloads in Cloudflare R2 for faster access
     
-    ## Private Repository Access:
-    To access private repositories, you need a GitHub Personal Access Token with 'repo' scope.
-    Provide it using one of these methods:
-    1. Add a 'token' query parameter: `/api/github/download-folder?owner=user&repo=myrepo&token=your-token`
-    2. Send an Authorization header: `Authorization: Bearer your-token`
+    ## Authentication:
+    The API uses a pre-configured GitHub token for accessing repositories.
+    You don't need to provide your own token unless you want to access private repositories 
+    that the default token doesn't have access to.
     """,
     version="1.0.0"
 )
@@ -58,14 +58,12 @@ async def root():
         "message": "Welcome to GitHub Folder ZIP API. Use /docs for API documentation.",
         "features": [
             "Download folders from public GitHub repositories",
-            "Access private repositories with a GitHub token",
-            "Customize folder path to download specific directories"
+            "Access private repositories using the API's built-in GitHub token",
+            "Customize folder path to download specific directories",
+            "Store downloads in Cloudflare R2 for faster delivery"
         ],
         "documentation_url": "/docs"
     }
-
-# Skip the background task cleanup for Vercel deployment
-# as it's not needed in a serverless environment
 
 if __name__ == "__main__":
     import uvicorn
